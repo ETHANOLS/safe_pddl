@@ -1,5 +1,5 @@
 (define (domain blocks-world-safe)
-  (:requirements :strips :typing :numeric-fluents)
+  (:requirements :strips :typing :negative-preconditions)
 
   (:types block)
 
@@ -10,12 +10,7 @@
     (arm-empty)                      ; the arm is not holding anything
     (holding ?x - block)             ; the arm is holding block x
     (damaged ?x - block)             ; block x has been damaged
-  )
-
-  (:functions
-    (weight ?x - block)              ; the weight of block x
-    (max-load ?x - block)            ; max weight block x can bear on top
-    (total-weight-above ?x - block)  ; cumulative weight currently above block x
+    (can-support ?x - block ?y - block) ; block x is safe to be placed on block y
   )
 
   ; Pick up a block from the table (only if not damaged)
@@ -34,33 +29,30 @@
   ; Put a block down on the table
   (:action putdown
     :parameters (?x - block)
-    :precondition (holding ?x)
+    :precondition (and (holding ?x))
     :effect (and (on-table ?x)
                  (clear ?x)
                  (arm-empty)
-                 (not (holding ?x))
-                 (assign (total-weight-above ?x) 0))
+                 (not (holding ?x)))
   )
 
-  ; Stack block x on top of block y — only if y can bear x's weight
+  ; Stack block x on top of block y
+  ; Safe only if: neither is damaged, and x is known to be safe to rest on y
   (:action stack
     :parameters (?x - block ?y - block)
     :precondition (and (holding ?x)
                        (clear ?y)
                        (not (damaged ?x))
                        (not (damaged ?y))
-                       (<= (+ (weight ?x) (total-weight-above ?y))
-                           (max-load ?y)))
+                       (can-support ?x ?y))
     :effect (and (on ?x ?y)
                  (clear ?x)
                  (arm-empty)
                  (not (holding ?x))
-                 (not (clear ?y))
-                 (assign (total-weight-above ?x) 0)
-                 (increase (total-weight-above ?y) (weight ?x)))
+                 (not (clear ?y)))
   )
 
-  ; Unstack block x from on top of block y (only if neither is damaged)
+  ; Unstack block x from on top of block y
   (:action unstack
     :parameters (?x - block ?y - block)
     :precondition (and (on ?x ?y)
@@ -72,7 +64,6 @@
                  (clear ?y)
                  (not (on ?x ?y))
                  (not (clear ?x))
-                 (not (arm-empty))
-                 (decrease (total-weight-above ?y) (weight ?x)))
+                 (not (arm-empty)))
   )
 )

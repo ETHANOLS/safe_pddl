@@ -2,125 +2,97 @@
   (:requirements :strips :typing)
 
   (:types
-    city
-    location airport - place
-    vehicle - object
+    place city - object
+    vehicle package - object
     truck airplane - vehicle
-    package
   )
 
   (:predicates
-    ;; A location or airport belongs to a city
-    (in-city ?loc - place ?city - city)
-
-    ;; Where things are
-    (at ?obj - object ?loc - place)
-    (in ?pkg - package ?veh - vehicle)
+    (in-city ?p - place ?c - city)
+    (at ?x - object ?p - place)
+    (in ?pkg - package ?v - vehicle)
+    (is-airport ?p - place)
   )
 
-  ;; Load a package into a truck
+  ;; Load package into truck
   (:action load-truck
-    :parameters (?pkg - package ?truck - truck ?loc - location)
+    :parameters (?pkg - package ?t - truck ?p - place)
     :precondition (and
-      (at ?truck ?loc)
-      (at ?pkg ?loc)
+      (at ?t ?p)
+      (at ?pkg ?p)
     )
     :effect (and
-      (not (at ?pkg ?loc))
-      (in ?pkg ?truck)
+      (in ?pkg ?t)
+      (not (at ?pkg ?p))
     )
   )
 
-  ;; Unload a package from a truck
+  ;; Unload package from truck
   (:action unload-truck
-    :parameters (?pkg - package ?truck - truck ?loc - location)
+    :parameters (?pkg - package ?t - truck ?p - place)
     :precondition (and
-      (at ?truck ?loc)
-      (in ?pkg ?truck)
+      (at ?t ?p)
+      (in ?pkg ?t)
     )
     :effect (and
-      (not (in ?pkg ?truck))
-      (at ?pkg ?loc)
+      (at ?pkg ?p)
+      (not (in ?pkg ?t))
     )
   )
 
-  ;; Load a package into an airplane
+  ;; Load package into airplane (only at airports)
   (:action load-airplane
-    :parameters (?pkg - package ?plane - airplane ?apt - airport)
+    :parameters (?pkg - package ?a - airplane ?p - place)
     :precondition (and
-      (at ?plane ?apt)
-      (at ?pkg ?apt)
+      (at ?a ?p)
+      (at ?pkg ?p)
+      (is-airport ?p)
     )
     :effect (and
-      (not (at ?pkg ?apt))
-      (in ?pkg ?plane)
+      (in ?pkg ?a)
+      (not (at ?pkg ?p))
     )
   )
 
-  ;; Unload a package from an airplane
+  ;; Unload package from airplane (only at airports)
   (:action unload-airplane
-    :parameters (?pkg - package ?plane - airplane ?apt - airport)
+    :parameters (?pkg - package ?a - airplane ?p - place)
     :precondition (and
-      (at ?plane ?apt)
-      (in ?pkg ?plane)
+      (at ?a ?p)
+      (in ?pkg ?a)
+      (is-airport ?p)
     )
     :effect (and
-      (not (in ?pkg ?plane))
-      (at ?pkg ?apt)
+      (at ?pkg ?p)
+      (not (in ?pkg ?a))
     )
   )
 
-  ;; Drive a truck between two locations within the same city
+  ;; Drive truck between two places within the same city
   (:action drive-truck
-    :parameters (?truck - truck ?from - location ?to - location ?city - city)
+    :parameters (?t - truck ?from - place ?to - place ?c - city)
     :precondition (and
-      (at ?truck ?from)
-      (in-city ?from ?city)
-      (in-city ?to ?city)
+      (at ?t ?from)
+      (in-city ?from ?c)
+      (in-city ?to ?c)
     )
     :effect (and
-      (not (at ?truck ?from))
-      (at ?truck ?to)
+      (at ?t ?to)
+      (not (at ?t ?from))
     )
   )
 
-  ;; Drive a truck from a location to the city airport
-  (:action drive-truck-to-airport
-    :parameters (?truck - truck ?from - location ?to - airport ?city - city)
-    :precondition (and
-      (at ?truck ?from)
-      (in-city ?from ?city)
-      (in-city ?to ?city)
-    )
-    :effect (and
-      (not (at ?truck ?from))
-      (at ?truck ?to)
-    )
-  )
-
-  ;; Drive a truck from the airport to a regular location
-  (:action drive-truck-from-airport
-    :parameters (?truck - truck ?from - airport ?to - location ?city - city)
-    :precondition (and
-      (at ?truck ?from)
-      (in-city ?from ?city)
-      (in-city ?to ?city)
-    )
-    :effect (and
-      (not (at ?truck ?from))
-      (at ?truck ?to)
-    )
-  )
-
-  ;; Fly an airplane between two airports
+  ;; Fly airplane between two airports
   (:action fly-airplane
-    :parameters (?plane - airplane ?from - airport ?to - airport)
+    :parameters (?a - airplane ?from - place ?to - place)
     :precondition (and
-      (at ?plane ?from)
+      (at ?a ?from)
+      (is-airport ?from)
+      (is-airport ?to)
     )
     :effect (and
-      (not (at ?plane ?from))
-      (at ?plane ?to)
+      (at ?a ?to)
+      (not (at ?a ?from))
     )
   )
 )

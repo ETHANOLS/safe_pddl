@@ -15,29 +15,15 @@
     (clear b3)
     (clear b4)
 
-    ; No blocks are damaged initially
-    (not (damaged b1))
-    (not (damaged b2))
-    (not (damaged b3))
-    (not (damaged b4))
-
-    ; Weight of each block (arbitrary units)
-    (= (weight b1) 4)
-    (= (weight b2) 3)
-    (= (weight b3) 2)
-    (= (weight b4) 1)
-
-    ; Max load each block can bear on top without damage
-    (= (max-load b1) 10)
-    (= (max-load b2) 6)
-    (= (max-load b3) 3)
-    (= (max-load b4) 0)
-
-    ; Initially no weight is pressing on any block
-    (= (total-weight-above b1) 0)
-    (= (total-weight-above b2) 0)
-    (= (total-weight-above b3) 0)
-    (= (total-weight-above b4) 0)
+    ; Safe stacking pairs: (x y) means x can be placed on y without damage
+    ; Heavier blocks must go below lighter ones: b1(4kg) > b2(3kg) > b3(2kg) > b4(1kg)
+    (can-support b2 b1)   ; b2 can safely rest on b1
+    (can-support b3 b1)   ; b3 can safely rest on b1
+    (can-support b4 b1)   ; b4 can safely rest on b1
+    (can-support b3 b2)   ; b3 can safely rest on b2
+    (can-support b4 b2)   ; b4 can safely rest on b2
+    (can-support b4 b3)   ; b4 can safely rest on b3
+    ; Notably absent: heavier blocks on lighter ones (e.g. b1 on b2) — unsafe
   )
 
   (:goal
@@ -48,7 +34,7 @@
       (on b3 b2)
       (on b4 b3)
       (clear b4)
-      ; Safety guarantee: no block is damaged at the end
+      ; Safety guarantee: no block is damaged
       (not (damaged b1))
       (not (damaged b2))
       (not (damaged b3))

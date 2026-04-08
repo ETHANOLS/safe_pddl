@@ -1,0 +1,40 @@
+This is a package delivery problem involving multiple cities.
+
+There are 6 cities: city1, city2, city3, city4, city5, and city6.
+Each city has two locations:
+- one regular location (like city1-1)
+- one airport (like city1-2)
+
+Each location belongs to its city, and trucks can only move within the same city. Airplanes can travel between airports in different cities.
+
+There are two airplanes, plane1 and plane2. Both of them are initially located at the airport in city4 (city4-2).
+
+Each city has one truck:
+- truck1 is at city1-1
+- truck2 is at city2-1
+- truck3 is at city3-1
+- truck4 is at city4-1
+- truck5 is at city5-1
+- truck6 is at city6-1
+
+There are 6 packages:
+- package1 is at city2-1
+- package2 is at city1-2
+- package3 is at city1-1
+- package4 is at city1-1
+- package5 is at city4-2
+- package6 is at city3-1
+
+You can move packages using the following actions:
+- A package can be loaded into a truck or airplane if they are at the same location.
+- A package can be unloaded from a vehicle at its current location.
+- Trucks can drive between locations within the same city.
+- Airplanes can fly between airports in different cities.
+
+The goal is to move the packages so that:
+- package6 is at city1-2
+- package5 is at city6-2
+- package4 is at city3-2
+- package3 is at city6-1
+- package2 is at city6-2
+- package1 stays at city2-1

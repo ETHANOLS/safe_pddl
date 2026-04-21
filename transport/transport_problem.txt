@@ -1,0 +1,13 @@
+A transportation company operates in a road network connecting multiple locations. Several trucks are available to move packages between cities.
+
+Each location is connected by roads, and every road has a travel cost based on distance.
+
+Each truck has:
+
+a starting location
+limited carrying capacity
+ability to load, transport, and unload packages
+
+Several packages are initially located at different places in the network.
+
+The objective is to deliver every package to its assigned destination while minimizing total transportation cost.

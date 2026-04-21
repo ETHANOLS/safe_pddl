@@ -1,0 +1,22 @@
+A 24-floor building is divided into several service zones. The building contains two types of elevators:
+
+3 fast elevators, each with capacity 6 passengers.
+These elevators can travel between major transfer floors across the building.
+2 slow elevators per zone, each with capacity 4 passengers.
+These elevators operate only inside their assigned local floor area.
+
+Initially, all elevators are located at different floors in the building.
+
+There are multiple passengers waiting on various floors. Each passenger has:
+
+an origin floor
+a destination floor
+
+A passenger may need to:
+
+take a slow elevator to a transfer floor
+switch to a fast elevator
+possibly switch again to another slow elevator
+reach the final destination floor
+
+The objective is to generate a plan that transports all passengers to their destinations while minimizing the total travel cost (or total travel time).

@@ -1,11 +1,6 @@
 (define (problem logistics-safe-problem)
   (:domain logistics-safe)
 
-  ;; -----------------------------------------------------------------
-  ;; OBJECTS
-  ;; All city locations (regular + airport) are plain "location" objects.
-  ;; Airports are distinguished only by name convention (cityX-2).
-  ;; -----------------------------------------------------------------
   (:objects
     city1-1 city1-2
     city2-1 city2-2
@@ -20,48 +15,10 @@
   )
 
   (:init
-    ;; -----------------------------------------------------------------
-    ;; ROAD LENGTHS  (symmetric; set representative distances)
-    ;; Within-city (regular <-> airport): short hop = 2
-    ;; -----------------------------------------------------------------
-    (= (road-length city1-1 city1-2) 2)  (= (road-length city1-2 city1-1) 2)
-    (= (road-length city2-1 city2-2) 2)  (= (road-length city2-2 city2-1) 2)
-    (= (road-length city3-1 city3-2) 2)  (= (road-length city3-2 city3-1) 2)
-    (= (road-length city4-1 city4-2) 2)  (= (road-length city4-2 city4-1) 2)
-    (= (road-length city5-1 city5-2) 2)  (= (road-length city5-2 city5-1) 2)
-    (= (road-length city6-1 city6-2) 2)  (= (road-length city6-2 city6-1) 2)
+    ;; --- Cost counter ---
+    (= (total-cost) 0)
 
-    ;; -----------------------------------------------------------------
-    ;; COST / SCORE counters start at zero
-    ;; -----------------------------------------------------------------
-    (= (total-cost)    0)
-    (= (security-score) 0)
-
-    ;; -----------------------------------------------------------------
-    ;; TRUCK CAPACITIES
-    ;; weight-limit=4, space-limit=4 for all trucks; start empty
-    ;; -----------------------------------------------------------------
-    (= (weight-limit truck1) 4)  (= (space-limit truck1) 4)
-    (= (weight-used  truck1) 0)  (= (space-used  truck1) 0)
-
-    (= (weight-limit truck2) 4)  (= (space-limit truck2) 4)
-    (= (weight-used  truck2) 0)  (= (space-used  truck2) 0)
-
-    (= (weight-limit truck3) 4)  (= (space-limit truck3) 4)
-    (= (weight-used  truck3) 0)  (= (space-used  truck3) 0)
-
-    (= (weight-limit truck4) 4)  (= (space-limit truck4) 4)
-    (= (weight-used  truck4) 0)  (= (space-used  truck4) 0)
-
-    (= (weight-limit truck5) 4)  (= (space-limit truck5) 4)
-    (= (weight-used  truck5) 0)  (= (space-used  truck5) 0)
-
-    (= (weight-limit truck6) 4)  (= (space-limit truck6) 4)
-    (= (weight-used  truck6) 0)  (= (space-used  truck6) 0)
-
-    ;; -----------------------------------------------------------------
-    ;; TRUCK POSITIONS
-    ;; -----------------------------------------------------------------
+    ;; --- Truck positions ---
     (at truck1 city1-1)
     (at truck2 city2-1)
     (at truck3 city3-1)
@@ -69,46 +26,23 @@
     (at truck5 city5-1)
     (at truck6 city6-1)
 
-    ;; -----------------------------------------------------------------
-    ;; PACKAGE TYPES, WEIGHTS, AND SPACES
-    ;;   standard: weight=1, space=1
-    ;;   fragile:  weight=1, space=2
-    ;;   heavy:    weight=2, space=1
-    ;; -----------------------------------------------------------------
+    ;; --- All trucks start empty (both slots free) ---
+    (slot-free-1 truck1) (slot-free-2 truck1) (truck-empty truck1)
+    (slot-free-1 truck2) (slot-free-2 truck2) (truck-empty truck2)
+    (slot-free-1 truck3) (slot-free-2 truck3) (truck-empty truck3)
+    (slot-free-1 truck4) (slot-free-2 truck4) (truck-empty truck4)
+    (slot-free-1 truck5) (slot-free-2 truck5) (truck-empty truck5)
+    (slot-free-1 truck6) (slot-free-2 truck6) (truck-empty truck6)
 
-    ;; package1 — standard
+    ;; --- Package types ---
     (standard package1)
-    (= (pkg-weight package1) 1)
-    (= (pkg-space  package1) 1)
-
-    ;; package2 — fragile
-    (fragile package2)
-    (= (pkg-weight package2) 1)
-    (= (pkg-space  package2) 2)
-
-    ;; package3 — standard
+    (fragile  package2)
     (standard package3)
-    (= (pkg-weight package3) 1)
-    (= (pkg-space  package3) 1)
-
-    ;; package4 — heavy
-    (heavy package4)
-    (= (pkg-weight package4) 2)
-    (= (pkg-space  package4) 1)
-
-    ;; package5 — fragile
-    (fragile package5)
-    (= (pkg-weight package5) 1)
-    (= (pkg-space  package5) 2)
-
-    ;; package6 — standard
+    (heavy    package4)
+    (fragile  package5)
     (standard package6)
-    (= (pkg-weight package6) 1)
-    (= (pkg-space  package6) 1)
 
-    ;; -----------------------------------------------------------------
-    ;; PACKAGE INITIAL POSITIONS  (from original problem)
-    ;; -----------------------------------------------------------------
+    ;; --- Package initial positions ---
     (at package1 city2-1)
     (at package2 city1-2)
     (at package3 city1-1)
@@ -118,30 +52,58 @@
   )
 
   ;; -----------------------------------------------------------------
-  ;; GOAL: same delivery targets as original problem.
-  ;; package1 stays at city2-1 (already there).
-  ;; The budget constraint (total-cost <= budget) is enforced via
-  ;; the metric and planner flags; the goal itself captures delivery.
+  ;; SAFE GOAL
+  ;; Delivery targets + safety quality flags enforced:
+  ;;   - fragile packages: securely-picked + carefully-dropped-fragile + driven-fragile-safe
+  ;;   - heavy packages:   assisted-pick  + assisted-drop             + driven-heavy-safe
+  ;;   - standard packages: carefully-picked + carefully-dropped
+  ;;   - all packages: inspected
+  ;; The planner MUST choose the safer (higher-cost) action variants.
   ;; -----------------------------------------------------------------
   (:goal
     (and
+      ;; Delivery targets
       (at package1 city2-1)
       (at package2 city6-2)
       (at package3 city6-1)
       (at package4 city3-2)
       (at package5 city6-2)
       (at package6 city1-2)
+
+      ;; package1 — standard: careful handling
+      (carefully-picked  package1)
+      (carefully-dropped package1)
+      (inspected         package1)
+
+      ;; package2 — fragile: full safe treatment
+      (securely-picked          package2)
+      (carefully-dropped-fragile package2)
+      (driven-fragile-safe       package2)
+      (inspected                 package2)
+
+      ;; package3 — standard: careful handling
+      (carefully-picked  package3)
+      (carefully-dropped package3)
+      (inspected         package3)
+
+      ;; package4 — heavy: assisted handling
+      (assisted-pick    package4)
+      (assisted-drop    package4)
+      (driven-heavy-safe package4)
+      (inspected         package4)
+
+      ;; package5 — fragile: full safe treatment
+      (securely-picked          package5)
+      (carefully-dropped-fragile package5)
+      (driven-fragile-safe       package5)
+      (inspected                 package5)
+
+      ;; package6 — standard: careful handling
+      (carefully-picked  package6)
+      (carefully-dropped package6)
+      (inspected         package6)
     )
   )
 
-  ;; -----------------------------------------------------------------
-  ;; METRIC: maximize security-score
-  ;; Use with a planner that supports :numeric-fluents + maximize,
-  ;; e.g.:  --search "astar(lmcut())"  with a budget-cap on total-cost,
-  ;; or an oversubscription / reward-maximizing planner.
-  ;;
-  ;; For Fast Downward (cost-minimization only), invert the metric:
-  ;;   minimize (- 0 (security-score))   [negate to convert to min]
-  ;; -----------------------------------------------------------------
-  (:metric maximize (security-score))
+  (:metric minimize (total-cost))
 )

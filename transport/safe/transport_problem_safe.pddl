@@ -1,120 +1,147 @@
-;; Safe Transport Problem
-;; Uses domain: transport-safe
-;;
-;; Network layout (bidirectional, cost on each edge):
-;;
-;;   city-a ---10--- city-b ---8---- city-c
-;;     |                               |
-;;    15                              12
-;;     |                               |
-;;   city-d ----------20------------ city-e
-;;
-;; Trucks:
-;;   truck-1  starts city-a  capacity 2
-;;   truck-2  starts city-c  capacity 2
-;;
-;; Packages & categories:
-;;   pkg-std1   standard    city-a  → city-c
-;;   pkg-frag1  fragile     city-b  → city-e
-;;   pkg-haz1   hazardous   city-d  → city-b
-;;   pkg-heavy1 heavy       city-a  → city-d
-;;   pkg-food1  food        city-c  → city-a
-;;
-;; Key safety tensions in this scenario:
-;;   • truck-1 starts with pkg-std1 (standard) AND pkg-heavy1 (heavy)
-;;     → it cannot also pick up pkg-frag1 (fragile/heavy conflict R2)
-;;   • pkg-haz1 must travel alone or with other non-food, non-fragile cargo (R3/R4)
-;;   • pkg-food1 cannot share a truck with pkg-haz1 (R3)
-;;   • All packages must be inspected before loading (R5)
+(define (problem logistics-safe-problem)
+  (:domain logistics-safe)
 
-(define (problem safe-transport-1)
-  (:domain transport-safe)
-
+  ;; -----------------------------------------------------------------
+  ;; OBJECTS
+  ;; All city locations (regular + airport) are plain "location" objects.
+  ;; Airports are distinguished only by name convention (cityX-2).
+  ;; -----------------------------------------------------------------
   (:objects
-    city-a city-b city-c city-d city-e - location
+    city1-1 city1-2
+    city2-1 city2-2
+    city3-1 city3-2
+    city4-1 city4-2
+    city5-1 city5-2
+    city6-1 city6-2 - location
 
-    truck-1 truck-2 - vehicle
+    truck1 truck2 truck3 truck4 truck5 truck6 - truck
 
-    pkg-std1   - package   ;; standard
-    pkg-frag1  - package   ;; fragile
-    pkg-haz1   - package   ;; hazardous
-    pkg-heavy1 - package   ;; heavy
-    pkg-food1  - package   ;; food
-
-    cap-0 cap-1 cap-2 - capacity-number
+    package1 package2 package3 package4 package5 package6 - package
   )
 
   (:init
-    ;; ── capacity predecessor chain ──────────────────────────
-    (capacity-predecessor cap-0 cap-1)
-    (capacity-predecessor cap-1 cap-2)
+    ;; -----------------------------------------------------------------
+    ;; ROAD LENGTHS  (symmetric; set representative distances)
+    ;; Within-city (regular <-> airport): short hop = 2
+    ;; -----------------------------------------------------------------
+    (= (road-length city1-1 city1-2) 2)  (= (road-length city1-2 city1-1) 2)
+    (= (road-length city2-1 city2-2) 2)  (= (road-length city2-2 city2-1) 2)
+    (= (road-length city3-1 city3-2) 2)  (= (road-length city3-2 city3-1) 2)
+    (= (road-length city4-1 city4-2) 2)  (= (road-length city4-2 city4-1) 2)
+    (= (road-length city5-1 city5-2) 2)  (= (road-length city5-2 city5-1) 2)
+    (= (road-length city6-1 city6-2) 2)  (= (road-length city6-2 city6-1) 2)
 
-    ;; ── road network ────────────────────────────────────────
-    (road city-a city-b) (= (road-length city-a city-b) 10)
-    (road city-b city-a) (= (road-length city-b city-a) 10)
+    ;; -----------------------------------------------------------------
+    ;; COST / SCORE counters start at zero
+    ;; -----------------------------------------------------------------
+    (= (total-cost)    0)
+    (= (security-score) 0)
 
-    (road city-b city-c) (= (road-length city-b city-c) 8)
-    (road city-c city-b) (= (road-length city-c city-b) 8)
+    ;; -----------------------------------------------------------------
+    ;; TRUCK CAPACITIES
+    ;; weight-limit=4, space-limit=4 for all trucks; start empty
+    ;; -----------------------------------------------------------------
+    (= (weight-limit truck1) 4)  (= (space-limit truck1) 4)
+    (= (weight-used  truck1) 0)  (= (space-used  truck1) 0)
 
-    (road city-a city-d) (= (road-length city-a city-d) 15)
-    (road city-d city-a) (= (road-length city-d city-a) 15)
+    (= (weight-limit truck2) 4)  (= (space-limit truck2) 4)
+    (= (weight-used  truck2) 0)  (= (space-used  truck2) 0)
 
-    (road city-c city-e) (= (road-length city-c city-e) 12)
-    (road city-e city-c) (= (road-length city-e city-c) 12)
+    (= (weight-limit truck3) 4)  (= (space-limit truck3) 4)
+    (= (weight-used  truck3) 0)  (= (space-used  truck3) 0)
 
-    (road city-d city-e) (= (road-length city-d city-e) 20)
-    (road city-e city-d) (= (road-length city-e city-d) 20)
+    (= (weight-limit truck4) 4)  (= (space-limit truck4) 4)
+    (= (weight-used  truck4) 0)  (= (space-used  truck4) 0)
 
-    ;; ── vehicle initial positions & capacities ───────────────
-    (at truck-1 city-a)
-    (capacity truck-1 cap-2)      ;; truck-1 holds up to 2 packages
+    (= (weight-limit truck5) 4)  (= (space-limit truck5) 4)
+    (= (weight-used  truck5) 0)  (= (space-used  truck5) 0)
 
-    (at truck-2 city-c)
-    (capacity truck-2 cap-2)      ;; truck-2 holds up to 2 packages
+    (= (weight-limit truck6) 4)  (= (space-limit truck6) 4)
+    (= (weight-used  truck6) 0)  (= (space-used  truck6) 0)
 
-    ;; ── package initial positions ────────────────────────────
-    (at pkg-std1   city-a)
-    (at pkg-frag1  city-b)
-    (at pkg-haz1   city-d)
-    (at pkg-heavy1 city-a)
-    (at pkg-food1  city-c)
+    ;; -----------------------------------------------------------------
+    ;; TRUCK POSITIONS
+    ;; -----------------------------------------------------------------
+    (at truck1 city1-1)
+    (at truck2 city2-1)
+    (at truck3 city3-1)
+    (at truck4 city4-1)
+    (at truck5 city5-1)
+    (at truck6 city6-1)
 
-    ;; ── package category flags ───────────────────────────────
-    ;; (standard packages carry no flag – absence = standard)
-    (fragile   pkg-frag1)
-    (hazardous pkg-haz1)
-    (heavy     pkg-heavy1)
-    (food      pkg-food1)
+    ;; -----------------------------------------------------------------
+    ;; PACKAGE TYPES, WEIGHTS, AND SPACES
+    ;;   standard: weight=1, space=1
+    ;;   fragile:  weight=1, space=2
+    ;;   heavy:    weight=2, space=1
+    ;; -----------------------------------------------------------------
 
-    ;; ── safety status: no package starts as inspected ────────
-    ;; (inspected ?p) must be derived by the inspect action.
-    ;; (damaged ?p) is intentionally absent – no package is damaged at start.
+    ;; package1 — standard
+    (standard package1)
+    (= (pkg-weight package1) 1)
+    (= (pkg-space  package1) 1)
 
-    ;; ── truck category occupancy flags: all clear at start ───
-    ;; (truck-has-fragile/heavy/hazardous/food ?v) all absent = clear
+    ;; package2 — fragile
+    (fragile package2)
+    (= (pkg-weight package2) 1)
+    (= (pkg-space  package2) 2)
 
-    ;; ── cost initialisation ──────────────────────────────────
-    (= (total-cost) 0)
+    ;; package3 — standard
+    (standard package3)
+    (= (pkg-weight package3) 1)
+    (= (pkg-space  package3) 1)
+
+    ;; package4 — heavy
+    (heavy package4)
+    (= (pkg-weight package4) 2)
+    (= (pkg-space  package4) 1)
+
+    ;; package5 — fragile
+    (fragile package5)
+    (= (pkg-weight package5) 1)
+    (= (pkg-space  package5) 2)
+
+    ;; package6 — standard
+    (standard package6)
+    (= (pkg-weight package6) 1)
+    (= (pkg-space  package6) 1)
+
+    ;; -----------------------------------------------------------------
+    ;; PACKAGE INITIAL POSITIONS  (from original problem)
+    ;; -----------------------------------------------------------------
+    (at package1 city2-1)
+    (at package2 city1-2)
+    (at package3 city1-1)
+    (at package4 city1-1)
+    (at package5 city4-2)
+    (at package6 city3-1)
   )
 
+  ;; -----------------------------------------------------------------
+  ;; GOAL: same delivery targets as original problem.
+  ;; package1 stays at city2-1 (already there).
+  ;; The budget constraint (total-cost <= budget) is enforced via
+  ;; the metric and planner flags; the goal itself captures delivery.
+  ;; -----------------------------------------------------------------
   (:goal
     (and
-      ;; ── delivery goals ──────────────────────────────────────
-      (at pkg-std1   city-c)    ;; standard pkg: city-a → city-c
-      (at pkg-frag1  city-e)    ;; fragile pkg:  city-b → city-e
-      (at pkg-haz1   city-b)    ;; hazardous pkg: city-d → city-b
-      (at pkg-heavy1 city-d)    ;; heavy pkg:    city-a → city-d
-      (at pkg-food1  city-a)    ;; food pkg:     city-c → city-a
-
-      ;; ── safety integrity goals ──────────────────────────────
-      ;; No package may arrive damaged
-      (not (damaged pkg-std1))
-      (not (damaged pkg-frag1))
-      (not (damaged pkg-haz1))
-      (not (damaged pkg-heavy1))
-      (not (damaged pkg-food1))
+      (at package1 city2-1)
+      (at package2 city6-2)
+      (at package3 city6-1)
+      (at package4 city3-2)
+      (at package5 city6-2)
+      (at package6 city1-2)
     )
   )
 
-  (:metric minimize (total-cost))
+  ;; -----------------------------------------------------------------
+  ;; METRIC: maximize security-score
+  ;; Use with a planner that supports :numeric-fluents + maximize,
+  ;; e.g.:  --search "astar(lmcut())"  with a budget-cap on total-cost,
+  ;; or an oversubscription / reward-maximizing planner.
+  ;;
+  ;; For Fast Downward (cost-minimization only), invert the metric:
+  ;;   minimize (- 0 (security-score))   [negate to convert to min]
+  ;; -----------------------------------------------------------------
+  (:metric maximize (security-score))
 )

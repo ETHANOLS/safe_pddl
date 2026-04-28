@@ -1,5 +1,5 @@
 (define (domain logistics-safe)
-  (:requirements :strips :typing :numeric-fluents)
+  (:requirements :strips :typing :action-costs :negative-preconditions)
 
   ;; -----------------------------------------------------------------
   ;; TYPES
@@ -14,7 +14,7 @@
   ;; PREDICATES
   ;; -----------------------------------------------------------------
   (:predicates
-    ;; Package type flags
+    ;; Package types
     (standard ?p - package)
     (fragile  ?p - package)
     (heavy    ?p - package)
@@ -23,48 +23,48 @@
     (at ?x - locatable ?l - location)
     (in ?p - package ?t - truck)
 
-    ;; Safety status flags (set by optional/pair actions)
-    (inspected ?p - package)   ;; set by inspect action
-    (secured   ?p - package)   ;; set by pick_up_fragile_secure
-    (assisted  ?p - package)   ;; set by pick_up_heavy_assisted / drop_heavy_assisted
+    ;; Capacity (2 propositional slots per truck)
+    (slot-free-1 ?t - truck)
+    (slot-free-2 ?t - truck)
 
-    ;; Pair-action mutex flags — ensure exactly one of each pair is chosen.
-    ;; Set when a package is picked up / dropped; cleared when the other
-    ;; action in the pair would have been valid (i.e. after drop).
-    (picked-up ?p - package)   ;; prevents double pickup
-    (dropped   ?p - package)   ;; prevents double drop
+    ;; Fragile isolation: truck must be empty to load fragile
+    (truck-empty ?t - truck)
+
+    ;; Pair-action mutex: prevent choosing both actions in a pair
+    (picked-up ?p - package)
+    (dropped   ?p - package)
+
+    ;; Safety quality flags (set by the safer variant of each pair)
+    ;; pickup
+    (carefully-picked ?p - package)   ;; pick_up_standard_careful
+    (securely-picked  ?p - package)   ;; pick_up_fragile_secure
+    (assisted-pick    ?p - package)   ;; pick_up_heavy_assisted
+    ;; drop
+    (carefully-dropped ?p - package)  ;; drop_standard_careful
+    (carefully-dropped-fragile ?p - package) ;; drop_fragile_careful
+    (assisted-drop    ?p - package)   ;; drop_heavy_assisted
+    ;; drive
+    (driven-slow      ?p - package)   ;; drive_slow
+    (driven-fragile-safe ?p - package) ;; drive_fragile_safe
+    (driven-heavy-safe ?p - package)  ;; drive_heavy_safe
+    ;; optional
+    (inspected ?p - package)
   )
 
   ;; -----------------------------------------------------------------
-  ;; FUNCTIONS
+  ;; FUNCTIONS  (only total-cost allowed by FD)
   ;; -----------------------------------------------------------------
   (:functions
-    (road-length ?l1 ?l2 - location)   ;; distance between two locations
-    (total-cost)                        ;; accumulated plan cost
-    (security-score)                    ;; accumulated security score
-
-    ;; Per-truck capacity tracking
-    (weight-used  ?t - truck)
-    (space-used   ?t - truck)
-    (weight-limit ?t - truck)
-    (space-limit  ?t - truck)
-
-    ;; Per-package attributes (set in problem init)
-    (pkg-weight ?p - package)
-    (pkg-space  ?p - package)
+    (total-cost) - number
   )
 
   ;; =================================================================
   ;; DRIVE ACTIONS
-  ;; Each pair: drive_fast  vs.  the safe alternative.
-  ;; For standard cargo:  drive_fast / drive_slow
-  ;; For fragile cargo:   drive_fast / drive_fragile_safe
-  ;; For heavy cargo:     drive_fast / drive_heavy_safe
-  ;; The truck must have the right kind of package loaded.
+  ;; Road length is fixed at 2 (within-city hop).
+  ;; Costs: fast=2, slow=2+4=6, fragile_safe=2+6=8, heavy_safe=2+5=7
   ;; =================================================================
 
   ;; --- drive_fast (standard) ---
-  ;; cost = road_length, score = 4
   (:action drive_fast_standard
     :parameters (?t - truck ?from - location ?to - location ?p - package)
     :precondition (and
@@ -75,13 +75,11 @@
     :effect (and
       (not (at ?t ?from))
       (at ?t ?to)
-      (increase (total-cost)    (road-length ?from ?to))
-      (increase (security-score) 4)
+      (increase (total-cost) 2)
     )
   )
 
   ;; --- drive_slow (standard) ---
-  ;; cost = road_length + 4, score = 10
   (:action drive_slow
     :parameters (?t - truck ?from - location ?to - location ?p - package)
     :precondition (and
@@ -92,13 +90,12 @@
     :effect (and
       (not (at ?t ?from))
       (at ?t ?to)
-      (increase (total-cost)    (+ (road-length ?from ?to) 4))
-      (increase (security-score) 10)
+      (driven-slow ?p)
+      (increase (total-cost) 6)
     )
   )
 
   ;; --- drive_fast (fragile) ---
-  ;; cost = road_length, score = 4
   (:action drive_fast_fragile
     :parameters (?t - truck ?from - location ?to - location ?p - package)
     :precondition (and
@@ -109,13 +106,11 @@
     :effect (and
       (not (at ?t ?from))
       (at ?t ?to)
-      (increase (total-cost)    (road-length ?from ?to))
-      (increase (security-score) 4)
+      (increase (total-cost) 2)
     )
   )
 
   ;; --- drive_fragile_safe ---
-  ;; cost = road_length + 6, score = 12
   (:action drive_fragile_safe
     :parameters (?t - truck ?from - location ?to - location ?p - package)
     :precondition (and
@@ -126,13 +121,12 @@
     :effect (and
       (not (at ?t ?from))
       (at ?t ?to)
-      (increase (total-cost)    (+ (road-length ?from ?to) 6))
-      (increase (security-score) 12)
+      (driven-fragile-safe ?p)
+      (increase (total-cost) 8)
     )
   )
 
   ;; --- drive_fast (heavy) ---
-  ;; cost = road_length, score = 4
   (:action drive_fast_heavy
     :parameters (?t - truck ?from - location ?to - location ?p - package)
     :precondition (and
@@ -143,13 +137,11 @@
     :effect (and
       (not (at ?t ?from))
       (at ?t ?to)
-      (increase (total-cost)    (road-length ?from ?to))
-      (increase (security-score) 4)
+      (increase (total-cost) 2)
     )
   )
 
   ;; --- drive_heavy_safe ---
-  ;; cost = road_length + 5, score = 10
   (:action drive_heavy_safe
     :parameters (?t - truck ?from - location ?to - location ?p - package)
     :precondition (and
@@ -160,277 +152,416 @@
     :effect (and
       (not (at ?t ?from))
       (at ?t ?to)
-      (increase (total-cost)    (+ (road-length ?from ?to) 5))
-      (increase (security-score) 10)
+      (driven-heavy-safe ?p)
+      (increase (total-cost) 7)
     )
   )
 
   ;; =================================================================
-  ;; PICK-UP ACTIONS  (pair — exactly one per package)
-  ;; Guards: (not (picked-up ?p)) ensures the pair is chosen only once.
+  ;; PICK-UP ACTIONS
+  ;; Capacity: slot-free-1 must be free for first package;
+  ;;           slot-free-2 must be free for second package.
+  ;; Fragile packages require truck-empty (both slots free).
+  ;; picked-up mutex prevents choosing two pickup variants.
   ;; =================================================================
 
-  ;; --- pick_up_standard_normal ---  cost=1, score=9
+  ;; --- pick_up_standard_normal (first package) ---  cost=1
   (:action pick_up_standard_normal
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (standard ?p)
-      (at ?p ?l)
-      (at ?t ?l)
+      (at ?p ?l) (at ?t ?l)
       (not (picked-up ?p))
-      (<= (+ (weight-used ?t) (pkg-weight ?p)) (weight-limit ?t))
-      (<= (+ (space-used  ?t) (pkg-space  ?p)) (space-limit  ?t))
+      (slot-free-1 ?t)
+      (truck-empty ?t)
     )
     :effect (and
       (not (at ?p ?l))
       (in ?p ?t)
       (picked-up ?p)
-      (increase (weight-used ?t) (pkg-weight ?p))
-      (increase (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    1)
-      (increase (security-score) 9)
+      (not (slot-free-1 ?t))
+      (not (truck-empty ?t))
+      (increase (total-cost) 1)
     )
   )
 
-  ;; --- pick_up_standard_careful ---  cost=2, score=10
+  ;; --- pick_up_standard_normal (second package) ---  cost=1
+  (:action pick_up_standard_normal_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (standard ?p)
+      (at ?p ?l) (at ?t ?l)
+      (not (picked-up ?p))
+      (not (slot-free-1 ?t))
+      (slot-free-2 ?t)
+    )
+    :effect (and
+      (not (at ?p ?l))
+      (in ?p ?t)
+      (picked-up ?p)
+      (not (slot-free-2 ?t))
+      (increase (total-cost) 1)
+    )
+  )
+
+  ;; --- pick_up_standard_careful (first package) ---  cost=2
   (:action pick_up_standard_careful
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (standard ?p)
-      (at ?p ?l)
-      (at ?t ?l)
+      (at ?p ?l) (at ?t ?l)
       (not (picked-up ?p))
-      (<= (+ (weight-used ?t) (pkg-weight ?p)) (weight-limit ?t))
-      (<= (+ (space-used  ?t) (pkg-space  ?p)) (space-limit  ?t))
+      (slot-free-1 ?t)
+      (truck-empty ?t)
     )
     :effect (and
       (not (at ?p ?l))
       (in ?p ?t)
       (picked-up ?p)
-      (increase (weight-used ?t) (pkg-weight ?p))
-      (increase (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    2)
-      (increase (security-score) 10)
+      (carefully-picked ?p)
+      (not (slot-free-1 ?t))
+      (not (truck-empty ?t))
+      (increase (total-cost) 2)
     )
   )
 
-  ;; --- pick_up_fragile_normal ---  cost=3, score=7
+  ;; --- pick_up_standard_careful (second package) ---  cost=2
+  (:action pick_up_standard_careful_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (standard ?p)
+      (at ?p ?l) (at ?t ?l)
+      (not (picked-up ?p))
+      (not (slot-free-1 ?t))
+      (slot-free-2 ?t)
+    )
+    :effect (and
+      (not (at ?p ?l))
+      (in ?p ?t)
+      (picked-up ?p)
+      (carefully-picked ?p)
+      (not (slot-free-2 ?t))
+      (increase (total-cost) 2)
+    )
+  )
+
+  ;; --- pick_up_fragile_normal ---  cost=3  (truck must be empty)
   (:action pick_up_fragile_normal
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (fragile ?p)
-      (at ?p ?l)
-      (at ?t ?l)
+      (at ?p ?l) (at ?t ?l)
       (not (picked-up ?p))
-      (<= (+ (weight-used ?t) (pkg-weight ?p)) (weight-limit ?t))
-      (<= (+ (space-used  ?t) (pkg-space  ?p)) (space-limit  ?t))
+      (slot-free-1 ?t)
+      (truck-empty ?t)
     )
     :effect (and
       (not (at ?p ?l))
       (in ?p ?t)
       (picked-up ?p)
-      (increase (weight-used ?t) (pkg-weight ?p))
-      (increase (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    3)
-      (increase (security-score) 7)
+      (not (slot-free-1 ?t))
+      (not (truck-empty ?t))
+      (increase (total-cost) 3)
     )
   )
 
-  ;; --- pick_up_fragile_secure ---  cost=6, score=12
+  ;; --- pick_up_fragile_secure ---  cost=6  (truck must be empty)
   (:action pick_up_fragile_secure
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (fragile ?p)
-      (at ?p ?l)
-      (at ?t ?l)
+      (at ?p ?l) (at ?t ?l)
       (not (picked-up ?p))
-      (<= (+ (weight-used ?t) (pkg-weight ?p)) (weight-limit ?t))
-      (<= (+ (space-used  ?t) (pkg-space  ?p)) (space-limit  ?t))
+      (slot-free-1 ?t)
+      (truck-empty ?t)
     )
     :effect (and
       (not (at ?p ?l))
       (in ?p ?t)
       (picked-up ?p)
-      (secured ?p)
-      (increase (weight-used ?t) (pkg-weight ?p))
-      (increase (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    6)
-      (increase (security-score) 12)
+      (securely-picked ?p)
+      (not (slot-free-1 ?t))
+      (not (truck-empty ?t))
+      (increase (total-cost) 6)
     )
   )
 
-  ;; --- pick_up_heavy_normal ---  cost=3, score=7
+  ;; --- pick_up_heavy_normal (first package) ---  cost=3
   (:action pick_up_heavy_normal
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (heavy ?p)
-      (at ?p ?l)
-      (at ?t ?l)
+      (at ?p ?l) (at ?t ?l)
       (not (picked-up ?p))
-      (<= (+ (weight-used ?t) (pkg-weight ?p)) (weight-limit ?t))
-      (<= (+ (space-used  ?t) (pkg-space  ?p)) (space-limit  ?t))
+      (slot-free-1 ?t)
+      (truck-empty ?t)
     )
     :effect (and
       (not (at ?p ?l))
       (in ?p ?t)
       (picked-up ?p)
-      (increase (weight-used ?t) (pkg-weight ?p))
-      (increase (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    3)
-      (increase (security-score) 7)
+      (not (slot-free-1 ?t))
+      (not (truck-empty ?t))
+      (increase (total-cost) 3)
     )
   )
 
-  ;; --- pick_up_heavy_assisted ---  cost=6, score=10
+  ;; --- pick_up_heavy_normal (second package) ---  cost=3
+  (:action pick_up_heavy_normal_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (heavy ?p)
+      (at ?p ?l) (at ?t ?l)
+      (not (picked-up ?p))
+      (not (slot-free-1 ?t))
+      (slot-free-2 ?t)
+    )
+    :effect (and
+      (not (at ?p ?l))
+      (in ?p ?t)
+      (picked-up ?p)
+      (not (slot-free-2 ?t))
+      (increase (total-cost) 3)
+    )
+  )
+
+  ;; --- pick_up_heavy_assisted (first package) ---  cost=6
   (:action pick_up_heavy_assisted
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (heavy ?p)
-      (at ?p ?l)
-      (at ?t ?l)
+      (at ?p ?l) (at ?t ?l)
       (not (picked-up ?p))
-      (<= (+ (weight-used ?t) (pkg-weight ?p)) (weight-limit ?t))
-      (<= (+ (space-used  ?t) (pkg-space  ?p)) (space-limit  ?t))
+      (slot-free-1 ?t)
+      (truck-empty ?t)
     )
     :effect (and
       (not (at ?p ?l))
       (in ?p ?t)
       (picked-up ?p)
-      (assisted ?p)
-      (increase (weight-used ?t) (pkg-weight ?p))
-      (increase (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    6)
-      (increase (security-score) 10)
+      (assisted-pick ?p)
+      (not (slot-free-1 ?t))
+      (not (truck-empty ?t))
+      (increase (total-cost) 6)
+    )
+  )
+
+  ;; --- pick_up_heavy_assisted (second package) ---  cost=6
+  (:action pick_up_heavy_assisted_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (heavy ?p)
+      (at ?p ?l) (at ?t ?l)
+      (not (picked-up ?p))
+      (not (slot-free-1 ?t))
+      (slot-free-2 ?t)
+    )
+    :effect (and
+      (not (at ?p ?l))
+      (in ?p ?t)
+      (picked-up ?p)
+      (assisted-pick ?p)
+      (not (slot-free-2 ?t))
+      (increase (total-cost) 6)
     )
   )
 
   ;; =================================================================
-  ;; DROP ACTIONS  (pair — exactly one per package)
+  ;; DROP ACTIONS
   ;; =================================================================
 
-  ;; --- drop_standard_normal ---  cost=1, score=7
+  ;; --- drop_standard_normal (was the only package) ---  cost=1
   (:action drop_standard_normal
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (standard ?p)
-      (in ?p ?t)
-      (at ?t ?l)
+      (in ?p ?t) (at ?t ?l)
       (not (dropped ?p))
+      (slot-free-2 ?t)          ;; slot 2 free => this is the only package
     )
     :effect (and
       (not (in ?p ?t))
       (at ?p ?l)
       (dropped ?p)
-      (decrease (weight-used ?t) (pkg-weight ?p))
-      (decrease (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    1)
-      (increase (security-score) 7)
+      (slot-free-1 ?t)
+      (truck-empty ?t)
+      (increase (total-cost) 1)
     )
   )
 
-  ;; --- drop_standard_careful ---  cost=2, score=9
+  ;; --- drop_standard_normal (one of two) ---  cost=1
+  (:action drop_standard_normal_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (standard ?p)
+      (in ?p ?t) (at ?t ?l)
+      (not (dropped ?p))
+      (not (slot-free-2 ?t))    ;; slot 2 occupied => two packages on board
+    )
+    :effect (and
+      (not (in ?p ?t))
+      (at ?p ?l)
+      (dropped ?p)
+      (slot-free-2 ?t)
+      (increase (total-cost) 1)
+    )
+  )
+
+  ;; --- drop_standard_careful (only package) ---  cost=2
   (:action drop_standard_careful
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (standard ?p)
-      (in ?p ?t)
-      (at ?t ?l)
+      (in ?p ?t) (at ?t ?l)
       (not (dropped ?p))
+      (slot-free-2 ?t)
     )
     :effect (and
       (not (in ?p ?t))
       (at ?p ?l)
       (dropped ?p)
-      (decrease (weight-used ?t) (pkg-weight ?p))
-      (decrease (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    2)
-      (increase (security-score) 9)
+      (carefully-dropped ?p)
+      (slot-free-1 ?t)
+      (truck-empty ?t)
+      (increase (total-cost) 2)
     )
   )
 
-  ;; --- drop_fragile_normal ---  cost=3, score=5
+  ;; --- drop_standard_careful (one of two) ---  cost=2
+  (:action drop_standard_careful_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (standard ?p)
+      (in ?p ?t) (at ?t ?l)
+      (not (dropped ?p))
+      (not (slot-free-2 ?t))
+    )
+    :effect (and
+      (not (in ?p ?t))
+      (at ?p ?l)
+      (dropped ?p)
+      (carefully-dropped ?p)
+      (slot-free-2 ?t)
+      (increase (total-cost) 2)
+    )
+  )
+
+  ;; --- drop_fragile_normal ---  cost=3  (fragile always solo → restores truck-empty)
   (:action drop_fragile_normal
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (fragile ?p)
-      (in ?p ?t)
-      (at ?t ?l)
+      (in ?p ?t) (at ?t ?l)
       (not (dropped ?p))
     )
     :effect (and
       (not (in ?p ?t))
       (at ?p ?l)
       (dropped ?p)
-      (decrease (weight-used ?t) (pkg-weight ?p))
-      (decrease (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    3)
-      (increase (security-score) 5)
+      (slot-free-1 ?t)
+      (truck-empty ?t)
+      (increase (total-cost) 3)
     )
   )
 
-  ;; --- drop_fragile_careful ---  cost=6, score=12
+  ;; --- drop_fragile_careful ---  cost=6
   (:action drop_fragile_careful
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (fragile ?p)
-      (in ?p ?t)
-      (at ?t ?l)
+      (in ?p ?t) (at ?t ?l)
       (not (dropped ?p))
     )
     :effect (and
       (not (in ?p ?t))
       (at ?p ?l)
       (dropped ?p)
-      (decrease (weight-used ?t) (pkg-weight ?p))
-      (decrease (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    6)
-      (increase (security-score) 12)
+      (carefully-dropped-fragile ?p)
+      (slot-free-1 ?t)
+      (truck-empty ?t)
+      (increase (total-cost) 6)
     )
   )
 
-  ;; --- drop_heavy_normal ---  cost=3, score=6
+  ;; --- drop_heavy_normal (only package) ---  cost=3
   (:action drop_heavy_normal
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (heavy ?p)
-      (in ?p ?t)
-      (at ?t ?l)
+      (in ?p ?t) (at ?t ?l)
       (not (dropped ?p))
+      (slot-free-2 ?t)
     )
     :effect (and
       (not (in ?p ?t))
       (at ?p ?l)
       (dropped ?p)
-      (decrease (weight-used ?t) (pkg-weight ?p))
-      (decrease (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    3)
-      (increase (security-score) 6)
+      (slot-free-1 ?t)
+      (truck-empty ?t)
+      (increase (total-cost) 3)
     )
   )
 
-  ;; --- drop_heavy_assisted ---  cost=6, score=10
+  ;; --- drop_heavy_normal (one of two) ---  cost=3
+  (:action drop_heavy_normal_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (heavy ?p)
+      (in ?p ?t) (at ?t ?l)
+      (not (dropped ?p))
+      (not (slot-free-2 ?t))
+    )
+    :effect (and
+      (not (in ?p ?t))
+      (at ?p ?l)
+      (dropped ?p)
+      (slot-free-2 ?t)
+      (increase (total-cost) 3)
+    )
+  )
+
+  ;; --- drop_heavy_assisted (only package) ---  cost=6
   (:action drop_heavy_assisted
     :parameters (?p - package ?t - truck ?l - location)
     :precondition (and
       (heavy ?p)
-      (in ?p ?t)
-      (at ?t ?l)
+      (in ?p ?t) (at ?t ?l)
       (not (dropped ?p))
+      (slot-free-2 ?t)
     )
     :effect (and
       (not (in ?p ?t))
       (at ?p ?l)
       (dropped ?p)
-      (decrease (weight-used ?t) (pkg-weight ?p))
-      (decrease (space-used  ?t) (pkg-space  ?p))
-      (increase (total-cost)    6)
-      (increase (security-score) 10)
+      (assisted-drop ?p)
+      (slot-free-1 ?t)
+      (truck-empty ?t)
+      (increase (total-cost) 6)
+    )
+  )
+
+  ;; --- drop_heavy_assisted (one of two) ---  cost=6
+  (:action drop_heavy_assisted_second
+    :parameters (?p - package ?t - truck ?l - location)
+    :precondition (and
+      (heavy ?p)
+      (in ?p ?t) (at ?t ?l)
+      (not (dropped ?p))
+      (not (slot-free-2 ?t))
+    )
+    :effect (and
+      (not (in ?p ?t))
+      (at ?p ?l)
+      (dropped ?p)
+      (assisted-drop ?p)
+      (slot-free-2 ?t)
+      (increase (total-cost) 6)
     )
   )
 
   ;; =================================================================
-  ;; OPTIONAL ACTION: inspect
-  ;; Can be applied to any package at any location; cost=2, score=10
+  ;; OPTIONAL ACTION: inspect  cost=2
+  ;; Can be applied to any package at any location before pickup.
   ;; =================================================================
   (:action inspect
     :parameters (?p - package ?l - location)
@@ -440,8 +571,7 @@
     )
     :effect (and
       (inspected ?p)
-      (increase (total-cost)    2)
-      (increase (security-score) 10)
+      (increase (total-cost) 2)
     )
   )
 )
